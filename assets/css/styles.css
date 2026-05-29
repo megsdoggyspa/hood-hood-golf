@@ -524,6 +524,13 @@ body { padding-bottom: 76px; }
   color: var(--muted);
 }
 
+.donate-modal__note {
+  margin: 0 0 0.85rem;
+  color: #ffe89a;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
 .donate-presets {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

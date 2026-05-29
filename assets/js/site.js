@@ -88,24 +88,23 @@ const DONATION_PRESETS = [10, 25, 50, 100, 250, 500];
 const DONATION_MIN = 10;
 const DONATION_MAX = 500;
 const DONATION_STEP = 1;
-const DONATION_FALLBACK_VARIANT_ID = '50190780530881';
+const DONATION_PRODUCT_HANDLE = 'donate';
 const DONATION_FALLBACK_STORE = 'https://shop.hoodhoodgolf.com';
+const DONATION_FALLBACK_VARIANTS = {
+  10: '50190780530881',
+  25: '50190780563649',
+  50: '50190780596417',
+  100: '50190780629185'
+};
 
 function parseDonationConfig() {
   const links = window.HHG_SHOPIFY_LINKS || {};
   const donateUrl = String(links.donate || '');
   const cartMatch = donateUrl.match(/^https?:\/\/[^/]+\/cart\/(\d+):\d+\?checkout/i);
-  if (cartMatch) {
-    const store = donateUrl.match(/^https?:\/\/[^/]+/i);
-    return {
-      store: store ? store[0] : DONATION_FALLBACK_STORE,
-      variantId: cartMatch[1]
-    };
-  }
-
+  const store = donateUrl.match(/^https?:\/\/[^/]+/i);
   return {
-    store: DONATION_FALLBACK_STORE,
-    variantId: DONATION_FALLBACK_VARIANT_ID
+    store: store ? store[0] : DONATION_FALLBACK_STORE,
+    seedVariantId: cartMatch ? cartMatch[1] : DONATION_FALLBACK_VARIANTS[10]
   };
 }
 
@@ -115,10 +114,111 @@ function clampDonationAmount(value) {
   return Math.min(DONATION_MAX, Math.max(DONATION_MIN, num));
 }
 
-function buildDonateCheckoutUrl(amount) {
-  const config = parseDonationConfig();
-  const qty = clampDonationAmount(amount);
-  return `${config.store}/cart/${config.variantId}:${qty}?checkout`;
+function toDonationVariantMap(variants) {
+  const output = {};
+  if (!Array.isArray(variants)) return output;
+
+  variants.forEach((variant) => {
+    const amount = Number(variant?.price) / 100;
+    if (!Number.isFinite(amount) || amount <= 0 || !variant?.id) return;
+    if (Number.isInteger(amount)) {
+      output[amount] = String(variant.id);
+    }
+  });
+
+  return output;
+}
+
+function buildDonationCartFromAmount(amount, variantMap) {
+  const target = clampDonationAmount(amount);
+  const denominations = Object.keys(variantMap)
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => b - a);
+
+  if (!denominations.length) {
+    return {
+      target: DONATION_MIN,
+      exact: false,
+      items: [{ variantId: DONATION_FALLBACK_VARIANTS[10], qty: 1 }]
+    };
+  }
+
+  const tryGreedy = (value) => {
+    let remainder = value;
+    const items = [];
+
+    denominations.forEach((denomination) => {
+      const qty = Math.floor(remainder / denomination);
+      if (qty > 0) {
+        items.push({ variantId: variantMap[denomination], qty });
+        remainder -= denomination * qty;
+      }
+    });
+
+    if (remainder === 0) return items;
+    return null;
+  };
+
+  let resolvedAmount = target;
+  let lineItems = tryGreedy(target);
+
+  if (!lineItems) {
+    for (let delta = 1; delta <= DONATION_MAX; delta += 1) {
+      const down = target - delta;
+      if (down >= DONATION_MIN) {
+        lineItems = tryGreedy(down);
+        if (lineItems) {
+          resolvedAmount = down;
+          break;
+        }
+      }
+
+      const up = target + delta;
+      if (up <= DONATION_MAX) {
+        lineItems = tryGreedy(up);
+        if (lineItems) {
+          resolvedAmount = up;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!lineItems) {
+    lineItems = tryGreedy(DONATION_MIN) || [{ variantId: variantMap[10] || DONATION_FALLBACK_VARIANTS[10], qty: 1 }];
+    resolvedAmount = DONATION_MIN;
+  }
+
+  return {
+    target: resolvedAmount,
+    exact: resolvedAmount === target,
+    items: lineItems
+  };
+}
+
+function buildDonateCheckoutUrlFromCart(store, cart) {
+  const itemsPart = cart.items.map((item) => `${item.variantId}:${item.qty}`).join(',');
+  return `${store}/cart/${itemsPart}?checkout`;
+}
+
+async function fetchDonateVariantMap(store) {
+  try {
+    const response = await fetch(`${store}/products/${DONATION_PRODUCT_HANDLE}.js`, { credentials: 'omit' });
+    if (!response.ok) return {};
+    const payload = await response.json();
+    return toDonationVariantMap(payload?.variants);
+  } catch (_error) {
+    return {};
+  }
+}
+
+function buildFallbackMapFromSeed(seedVariantId) {
+  const fallback = { ...DONATION_FALLBACK_VARIANTS };
+  if (seedVariantId && !Object.values(fallback).includes(seedVariantId)) {
+    fallback[10] = seedVariantId;
+  }
+  return fallback;
 }
 
 function createDonateModal() {
@@ -133,6 +233,7 @@ function createDonateModal() {
       <p class="donate-modal__kicker">Support HHG</p>
       <h3 id="donate-modal-title">Donate Any Amount</h3>
       <p class="donate-modal__helper">$1 quantity = $1 donated. Choose a preset or enter your own amount.</p>
+      <p class="donate-modal__note" data-donate-note hidden></p>
 
       <div class="donate-presets" role="group" aria-label="Donation presets">
         ${DONATION_PRESETS.map((amount) => `<button type="button" class="donate-preset" data-donate-preset="${amount}">$${amount}</button>`).join('')}
@@ -160,27 +261,57 @@ function createDonateModal() {
 function initDonateFlow() {
   const donateLinks = Array.from(document.querySelectorAll('[data-shopify-key="donate"]'));
   if (!donateLinks.length) return;
+  const donateConfig = parseDonationConfig();
+  const fallbackVariantMap = buildFallbackMapFromSeed(donateConfig.seedVariantId);
+  let activeVariantMap = fallbackVariantMap;
 
   donateLinks.forEach((el) => {
     el.textContent = 'Donate Any Amount';
-    el.setAttribute('href', buildDonateCheckoutUrl(DONATION_MIN));
+    const initialCart = buildDonationCartFromAmount(DONATION_MIN, activeVariantMap);
+    el.setAttribute('href', buildDonateCheckoutUrlFromCart(donateConfig.store, initialCart));
   });
 
   const modal = createDonateModal();
   const input = modal.querySelector('.donate-input');
   const submit = modal.querySelector('[data-donate-submit]');
+  const note = modal.querySelector('[data-donate-note]');
   const presetButtons = Array.from(modal.querySelectorAll('[data-donate-preset]'));
+
+  const setNote = (message) => {
+    if (!message) {
+      note.setAttribute('hidden', 'hidden');
+      note.textContent = '';
+      return;
+    }
+    note.textContent = message;
+    note.removeAttribute('hidden');
+  };
 
   const updateSelectedPreset = () => {
     const value = clampDonationAmount(input.value);
+    const cart = buildDonationCartFromAmount(value, activeVariantMap);
+    input.value = String(cart.target);
     presetButtons.forEach((btn) => {
       const amount = Number.parseInt(btn.getAttribute('data-donate-preset') || '', 10);
-      btn.classList.toggle('is-active', amount === value);
+      btn.classList.toggle('is-active', amount === cart.target);
     });
-    submit.setAttribute('href', buildDonateCheckoutUrl(value));
+    submit.setAttribute('href', buildDonateCheckoutUrlFromCart(donateConfig.store, cart));
+    if (cart.exact) {
+      setNote('');
+    } else {
+      setNote(`Adjusted to $${cart.target} based on available donation options.`);
+    }
   };
 
-  const openModal = () => {
+  const openModal = async () => {
+    if (!modal.dataset.loaded) {
+      const fetchedMap = await fetchDonateVariantMap(donateConfig.store);
+      if (Object.keys(fetchedMap).length) {
+        activeVariantMap = fetchedMap;
+      }
+      modal.dataset.loaded = 'true';
+    }
+
     modal.hidden = false;
     document.body.classList.add('modal-open');
     updateSelectedPreset();
@@ -194,14 +325,18 @@ function initDonateFlow() {
   };
 
   donateLinks.forEach((el) => {
-    el.addEventListener('click', (event) => {
+    el.addEventListener('click', async (event) => {
       event.preventDefault();
-      openModal();
+      await openModal();
     });
   });
 
   modal.querySelectorAll('[data-donate-close]').forEach((el) => {
-    el.addEventListener('click', closeModal);
+    el.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeModal();
+    });
   });
 
   presetButtons.forEach((btn) => {
@@ -223,6 +358,15 @@ function initDonateFlow() {
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !modal.hidden) {
+      closeModal();
+    }
+  });
+
+  modal.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.hasAttribute('data-donate-close')) return;
+    if (target.classList.contains('donate-modal')) {
       closeModal();
     }
   });
