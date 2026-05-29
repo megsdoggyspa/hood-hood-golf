@@ -84,6 +84,150 @@ function initShopifyLinks() {
   });
 }
 
+const DONATION_PRESETS = [10, 25, 50, 100, 250, 500];
+const DONATION_MIN = 10;
+const DONATION_MAX = 500;
+const DONATION_STEP = 1;
+const DONATION_FALLBACK_VARIANT_ID = '50190780530881';
+const DONATION_FALLBACK_STORE = 'https://shop.hoodhoodgolf.com';
+
+function parseDonationConfig() {
+  const links = window.HHG_SHOPIFY_LINKS || {};
+  const donateUrl = String(links.donate || '');
+  const cartMatch = donateUrl.match(/^https?:\/\/[^/]+\/cart\/(\d+):\d+\?checkout/i);
+  if (cartMatch) {
+    const store = donateUrl.match(/^https?:\/\/[^/]+/i);
+    return {
+      store: store ? store[0] : DONATION_FALLBACK_STORE,
+      variantId: cartMatch[1]
+    };
+  }
+
+  return {
+    store: DONATION_FALLBACK_STORE,
+    variantId: DONATION_FALLBACK_VARIANT_ID
+  };
+}
+
+function clampDonationAmount(value) {
+  const num = Number.parseInt(String(value || ''), 10);
+  if (Number.isNaN(num)) return DONATION_MIN;
+  return Math.min(DONATION_MAX, Math.max(DONATION_MIN, num));
+}
+
+function buildDonateCheckoutUrl(amount) {
+  const config = parseDonationConfig();
+  const qty = clampDonationAmount(amount);
+  return `${config.store}/cart/${config.variantId}:${qty}?checkout`;
+}
+
+function createDonateModal() {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'donate-modal';
+  wrapper.setAttribute('data-donate-modal', '');
+  wrapper.setAttribute('hidden', 'hidden');
+  wrapper.innerHTML = `
+    <div class="donate-modal__backdrop" data-donate-close></div>
+    <div class="donate-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="donate-modal-title">
+      <button type="button" class="donate-modal__close" aria-label="Close" data-donate-close>&times;</button>
+      <p class="donate-modal__kicker">Support HHG</p>
+      <h3 id="donate-modal-title">Donate Any Amount</h3>
+      <p class="donate-modal__helper">$1 quantity = $1 donated. Choose a preset or enter your own amount.</p>
+
+      <div class="donate-presets" role="group" aria-label="Donation presets">
+        ${DONATION_PRESETS.map((amount) => `<button type="button" class="donate-preset" data-donate-preset="${amount}">$${amount}</button>`).join('')}
+      </div>
+
+      <label class="donate-label" for="donation-amount">Donation Amount</label>
+      <input
+        id="donation-amount"
+        class="donate-input"
+        type="number"
+        min="${DONATION_MIN}"
+        max="${DONATION_MAX}"
+        step="${DONATION_STEP}"
+        value="${DONATION_MIN}"
+        inputmode="numeric"
+      />
+
+      <a class="btn btn-primary donate-submit" data-donate-submit href="${buildDonateCheckoutUrl(DONATION_MIN)}">Donate Any Amount</a>
+    </div>
+  `;
+  document.body.appendChild(wrapper);
+  return wrapper;
+}
+
+function initDonateFlow() {
+  const donateLinks = Array.from(document.querySelectorAll('[data-shopify-key="donate"]'));
+  if (!donateLinks.length) return;
+
+  donateLinks.forEach((el) => {
+    el.textContent = 'Donate Any Amount';
+    el.setAttribute('href', buildDonateCheckoutUrl(DONATION_MIN));
+  });
+
+  const modal = createDonateModal();
+  const input = modal.querySelector('.donate-input');
+  const submit = modal.querySelector('[data-donate-submit]');
+  const presetButtons = Array.from(modal.querySelectorAll('[data-donate-preset]'));
+
+  const updateSelectedPreset = () => {
+    const value = clampDonationAmount(input.value);
+    presetButtons.forEach((btn) => {
+      const amount = Number.parseInt(btn.getAttribute('data-donate-preset') || '', 10);
+      btn.classList.toggle('is-active', amount === value);
+    });
+    submit.setAttribute('href', buildDonateCheckoutUrl(value));
+  };
+
+  const openModal = () => {
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+    updateSelectedPreset();
+    input.focus();
+    input.select();
+  };
+
+  const closeModal = () => {
+    modal.hidden = true;
+    document.body.classList.remove('modal-open');
+  };
+
+  donateLinks.forEach((el) => {
+    el.addEventListener('click', (event) => {
+      event.preventDefault();
+      openModal();
+    });
+  });
+
+  modal.querySelectorAll('[data-donate-close]').forEach((el) => {
+    el.addEventListener('click', closeModal);
+  });
+
+  presetButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const amount = Number.parseInt(btn.getAttribute('data-donate-preset') || '', 10);
+      input.value = String(clampDonationAmount(amount));
+      updateSelectedPreset();
+    });
+  });
+
+  input.addEventListener('input', () => {
+    updateSelectedPreset();
+  });
+
+  input.addEventListener('blur', () => {
+    input.value = String(clampDonationAmount(input.value));
+    updateSelectedPreset();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.hidden) {
+      closeModal();
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initCountdown();
   initShareButtons();
@@ -91,4 +235,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initYear();
   initMobileNav();
   initShopifyLinks();
+  initDonateFlow();
 });

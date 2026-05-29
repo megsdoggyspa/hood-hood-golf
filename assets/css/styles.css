@@ -453,7 +453,126 @@ body { padding-bottom: 76px; }
     border-radius: 12px;
   }
   body { padding-bottom: 0; }
-  .footer { padding-bottom: 2rem; }
+.footer { padding-bottom: 2rem; }
+}
+
+.modal-open {
+  overflow: hidden;
+}
+
+.donate-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.donate-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 8, 0.76);
+  backdrop-filter: blur(6px);
+}
+
+.donate-modal__dialog {
+  position: relative;
+  width: min(100%, 520px);
+  border-radius: var(--radius);
+  border: 1px solid rgba(57,255,136,0.5);
+  background: linear-gradient(180deg, #0d1419, #0a1014);
+  box-shadow: 0 0 40px rgba(57,255,136,0.2), var(--shadow);
+  padding: 1.2rem;
+}
+
+.donate-modal__close {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.65rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.donate-modal__close:hover {
+  color: var(--text);
+}
+
+.donate-modal__kicker {
+  margin: 0;
+  color: var(--green);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 0.74rem;
+  letter-spacing: 1px;
+}
+
+.donate-modal h3 {
+  margin: 0.4rem 0 0.45rem;
+  font-family: "Oswald", "Arial Narrow", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 1.8rem;
+}
+
+.donate-modal__helper {
+  margin: 0 0 0.95rem;
+  color: var(--muted);
+}
+
+.donate-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.95rem;
+}
+
+.donate-preset {
+  border: 1px solid rgba(57,255,136,0.42);
+  background: rgba(57,255,136,0.08);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.55rem 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.donate-preset:hover,
+.donate-preset.is-active {
+  border-color: var(--green);
+  background: rgba(57,255,136,0.2);
+  box-shadow: 0 0 0 1px rgba(57,255,136,0.35);
+}
+
+.donate-label {
+  display: block;
+  margin: 0 0 0.35rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.donate-input {
+  margin-bottom: 0.95rem;
+  font-size: 1.05rem;
+}
+
+.donate-submit {
+  width: 100%;
+}
+
+.btn-secondary[data-shopify-key="donate"] {
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .donate-presets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 
