@@ -88,6 +88,7 @@ const DONATION_PRESETS = [10, 25, 50, 100, 250, 500];
 const DONATION_MIN = 10;
 const DONATION_MAX = 500;
 const DONATION_STEP = 1;
+const DONATE_LABEL = 'Donate';
 const DONATION_PRODUCT_HANDLE = 'donate';
 const DONATION_FALLBACK_STORE = 'https://shop.hoodhoodgolf.com';
 const DONATION_FALLBACK_VARIANTS = {
@@ -221,7 +222,7 @@ function buildFallbackMapFromSeed(seedVariantId) {
   return fallback;
 }
 
-function createDonateModal() {
+function createDonateModal(initialHref) {
   const wrapper = document.createElement('div');
   wrapper.className = 'donate-modal';
   wrapper.setAttribute('data-donate-modal', '');
@@ -231,7 +232,7 @@ function createDonateModal() {
     <div class="donate-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="donate-modal-title">
       <button type="button" class="donate-modal__close" aria-label="Close" data-donate-close>&times;</button>
       <p class="donate-modal__kicker">Support HHG</p>
-      <h3 id="donate-modal-title">Donate Any Amount</h3>
+      <h3 id="donate-modal-title">${DONATE_LABEL}</h3>
       <p class="donate-modal__helper">$1 quantity = $1 donated. Choose a preset or enter your own amount.</p>
       <p class="donate-modal__note" data-donate-note hidden></p>
 
@@ -251,7 +252,7 @@ function createDonateModal() {
         inputmode="numeric"
       />
 
-      <a class="btn btn-primary donate-submit" data-donate-submit href="${buildDonateCheckoutUrl(DONATION_MIN)}">Donate Any Amount</a>
+      <a class="btn btn-primary donate-submit" data-donate-submit href="${initialHref}">${DONATE_LABEL}</a>
     </div>
   `;
   document.body.appendChild(wrapper);
@@ -264,14 +265,15 @@ function initDonateFlow() {
   const donateConfig = parseDonationConfig();
   const fallbackVariantMap = buildFallbackMapFromSeed(donateConfig.seedVariantId);
   let activeVariantMap = fallbackVariantMap;
+  const initialCart = buildDonationCartFromAmount(DONATION_MIN, activeVariantMap);
+  const initialHref = buildDonateCheckoutUrlFromCart(donateConfig.store, initialCart);
 
   donateLinks.forEach((el) => {
-    el.textContent = 'Donate Any Amount';
-    const initialCart = buildDonationCartFromAmount(DONATION_MIN, activeVariantMap);
-    el.setAttribute('href', buildDonateCheckoutUrlFromCart(donateConfig.store, initialCart));
+    el.textContent = DONATE_LABEL;
+    el.setAttribute('href', initialHref);
   });
 
-  const modal = createDonateModal();
+  const modal = createDonateModal(initialHref);
   const input = modal.querySelector('.donate-input');
   const submit = modal.querySelector('[data-donate-submit]');
   const note = modal.querySelector('[data-donate-note]');
